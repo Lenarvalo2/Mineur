@@ -1,23 +1,73 @@
 extends Node2D
 
 var Room= preload("res://Room.tscn")
+var Player= preload("res://Player.tscn")
+
+var Door= preload("res://Door.tscn")
 
 onready var Map = $TileMap
 
+export (PackedScene) var Mob
+var score
+
+
+
 var tile_size = 32
-var num_rooms = 50
-var min_size =7	
-var max_size = 10
+var num_rooms = 20
+var min_size =9
+var max_size = 16
 var hspread = 500
 var cull = 0.5
 
 var path 
+var start_room = null
+var end_room = null
+var play_mode = false
+var player = null
+var door = null
+
+var upper_room=null
+var lower_room=null
 
 func _ready():
 	randomize()
 	make_rooms()
 	
+	#new_game()
+
+func game_over():
+	$ScoreTimer.stop()
+	$MobTimer.stop()
+	$HUD.show_game_over()
+	get_tree().call_group("Mobs", "queue_free")
+
+func win_game():
+	$ScoreTimer.stop()
+	$MobTimer.stop()
+	$HUD.show_win(score)
+	get_tree().call_group("Mobs", "queue_free")
+	get_tree().call_group("Door", "queue_free")
 	
+func new_game():
+	score = 0
+	create_mob_path()
+	$StartTimer.start()
+	$HUD.update_score(score)
+	$HUD.show_message("Get Ready")
+	turn_off_room_collisions()
+	#player = Player.instance()
+	#add_child(player)
+	$Player.position=start_room.position
+	$Player.show()
+	door = Door.instance()
+	add_child(door)
+	door.position=end_room.position
+	play_mode = true
+	
+	
+
+
+
 func make_rooms():
 	for i in range(num_rooms) :
 		var pos = Vector2(rand_range(-hspread, hspread),0)
@@ -27,7 +77,7 @@ func make_rooms():
 		r.make_room(pos,Vector2(w,h)*tile_size)
 		$Rooms.add_child(r)
 	#wait room to stop
-	yield(get_tree().create_timer(1.1),'timeout')
+	yield(get_tree().create_timer(.5),'timeout')
 	
 	var room_positions = []
 	
@@ -39,9 +89,10 @@ func make_rooms():
 			room_positions.append(Vector3(room.position.x,room.position.y,0))
 	yield(get_tree(), 'idle_frame')
 	path = find_mst(room_positions)
-	yield(get_tree().create_timer(1.1),'timeout')
+	#yield(get_tree().create_timer(1.1),'timeout')
 	make_map()
-#func _draw():
+	
+func _draw():
 	for room in $Rooms.get_children():
 		draw_rect(Rect2(room.position - room.size, room.size *2),Color(32,228,0),false)
 		
@@ -58,15 +109,37 @@ func make_rooms():
 func _process(delta):
 	update()
 
+func turn_off_room_collisions():
+	for room in $Rooms.get_children():
+		room.get_node("CollisionShape2D").set_deferred("disabled", true)
+
 
 func _input(event):
-	if event.is_action_pressed('ui_select'):
-		for n in $Rooms.get_children():
-			n.queue_free()
-		make_rooms()
+	# Spacebar restarts and creates a new set of rooms
+	#if event.is_action_pressed('ui_select'):
+		
+		#Map.clear()
+		#for n in $Rooms.get_children():
+		#	n.queue_free()
+		#path = null
+	#	start_room = null
+	#	end_room = null
+	#	upper_room=null
+	#	lower_room=null
+	#	door=null
+		
+	#	make_rooms()
+	#	new_game()
+	# Tab generates the TileMap
 	if event.is_action_pressed('ui_focus_next'):
 		make_map()
-	
+	# Esc spawns a player to explore the map
+	if event.is_action_pressed('ui_cancel'):
+		turn_off_room_collisions()
+		player = Player.instance()
+		add_child(player)
+		player.position = start_room.position
+		play_mode = true
 	
 	
 func find_mst(nodes):
@@ -95,14 +168,16 @@ func find_mst(nodes):
 		
 		
 func make_map():
+	find_start_room()
+	find_end_room()
 	Map.clear()
 	var full_rect=Rect2()
 	for room in $Rooms.get_children():
 		var r = Rect2(room.position-room.size,
 				room.get_node("CollisionShape2D").shape.extents*2)
 		full_rect = full_rect.merge(r)
-	var topleft = Map.world_to_map(full_rect.position)
-	var bottomright= Map.world_to_map(full_rect.end)
+	var topleft = Map.world_to_map(full_rect.position)+Vector2(-100,-100)
+	var bottomright= Map.world_to_map(full_rect.end)+Vector2(100,100)
 	for x in range(topleft.x, bottomright.x):
 		for y in range(topleft.y,bottomright.y):
 			var t = Vector2(x,y)
@@ -148,32 +223,117 @@ func carve_path(pos1,pos2):
 		x_y=pos2
 		y_x=pos1
 	
-	var lar=4 	#Largeur des coulours
+	var lar=6 	#Largeur des coulours
 	
-	
-	for x in range(pos1.x, pos2.x,x_diff):
-		var location = Vector2(x,x_y.y)
-		Map.set_cellv(location, 0)
-		Map.update_bitmask_area(location)	
-		
-		for i in range(0,lar):
-			location = Vector2(x, x_y.y+y_diff+i)
-			Map.set_cellv(location, 0)
-			Map.update_bitmask_area(location)
-			
-		
-		
-	for y in range(pos1.y, pos2.y, y_diff):
-		var location = Vector2(y_x.x,y)
-		Map.set_cellv(location, 0)
-		Map.update_bitmask_area(location)	
-		for i in range(0,lar):
-			location = Vector2(y_x.x + x_diff+i, y)
+	if(x_diff>0):
+		for x in range(pos1.x-lar/2, pos2.x,x_diff):
+			var location = Vector2(x,x_y.y)
 			Map.set_cellv(location, 0)
 			Map.update_bitmask_area(location)	
 		
+			for i in range(0,lar):
+				location = Vector2(x, x_y.y+y_diff+i)
+				Map.set_cellv(location, 0)
+				Map.update_bitmask_area(location)
+	if(x_diff<0):
+		for x in range(pos1.x+lar/2, pos2.x,x_diff):
+			var location = Vector2(x,x_y.y)
+			Map.set_cellv(location, 0)
+			Map.update_bitmask_area(location)	
 		
+			for i in range(0,lar):
+				location = Vector2(x, x_y.y+y_diff+i)
+				Map.set_cellv(location, 0)
+				Map.update_bitmask_area(location)		
+		
+	if (y_diff>0):
+		for y in range(pos1.y-lar/2, pos2.y, y_diff):
+			var location = Vector2(y_x.x,y)
+			Map.set_cellv(location, 0)
+			Map.update_bitmask_area(location)	
+			for i in range(0,lar):
+				location = Vector2(y_x.x + x_diff+i, y)
+				Map.set_cellv(location, 0)
+				Map.update_bitmask_area(location)
+	if (y_diff<0):
+		for y in range(pos1.y+lar/2, pos2.y, y_diff):
+			var location = Vector2(y_x.x,y)
+			Map.set_cellv(location, 0)
+			Map.update_bitmask_area(location)	
+			for i in range(0,lar):
+				location = Vector2(y_x.x + x_diff+i, y)
+				Map.set_cellv(location, 0)
+				Map.update_bitmask_area(location)
+		
+		
+func find_start_room():
+	var min_x = INF
+	for room in $Rooms.get_children():
+		if room.position.x < min_x:
+			start_room = room
+			min_x = room.position.x
+			
+func find_upper_room():
+	var max_y = INF
+	for room in $Rooms.get_children():
+		if room.position.y < max_y:
+			upper_room = room
+			max_y = room.position.y
+
+func find_lower_room():
+	var min_y = -INF
+	for room in $Rooms.get_children():
+		if room.position.y > min_y:
+			lower_room = room
+			min_y = room.position.y
+
+func find_end_room():
+	var max_x = -INF
+	for room in $Rooms.get_children():
+		if room.position.x > max_x:
+			end_room = room
+			max_x = room.position.x
+
+func _on_MobTimer_timeout():
+	# Choose a random location on Path2D.
+	$MobPath/MobSpawnLocation.offset = randi()
+	# Create a Mob instance and add it to the scene.
+	var mob = Mob.instance()
+	add_child(mob)
+	# Set the mob's direction perpendicular to the path direction.
+	var direction= $MobPath/MobSpawnLocation.rotation + PI / 2
+	# Set the mob's position to a random location.
+	mob.position = $MobPath/MobSpawnLocation.position
+	# Add some randomness to the direction.
+	direction += rand_range(-2*PI,2* PI)
+	mob.rotation = direction
+	# Set the velocity (speed & direction).
+	if(mob.linear_velocity==Vector2.ZERO):
+		
+		mob.linear_velocity = Vector2(rand_range(mob.min_speed, mob.max_speed), 0)
+		mob.linear_velocity = mob.linear_velocity.rotated(direction)
+		#print(mob.linear_velocity)
+		
+	#remove_child(mob)
+
+func create_mob_path():
+	find_lower_room()
+	find_upper_room()
+	$MobPath.curve.add_point(Vector2(start_room.position.x+1000,start_room.position.y))
+	$MobPath.curve.add_point(Vector2(upper_room.position.x,upper_room.position.y-100))
+	$MobPath.curve.add_point(Vector2(end_room.position.x+100,end_room.position.y+100))
+	$MobPath.curve.add_point(Vector2(lower_room.position.x,lower_room.position.y+100))
 	
-	
-						
+func _on_StartTimer_timeout():
+	$MobTimer.start()
+	$ScoreTimer.start()
+
+
+
+
+
+func _on_ScoreTimer_timeout():
+	score += 1
+	$HUD.update_score(score)
+
 

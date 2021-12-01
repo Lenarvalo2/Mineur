@@ -1,5 +1,7 @@
 extends Area2D
-signal hit
+
+
+#signal hit
 
 
 export var speed = 400  # How fast the player will move (pixels/sec).
@@ -42,11 +44,12 @@ func _process(delta):
 
 
 func _on_Player_body_entered(body):
-	hide()  # Player disappears after being hit.
-	emit_signal("hit")
-	$CollisionShape2D.set_deferred("disabled", true)
+	#hide()  # Player disappears after being hit.
+	#emit_signal("hit")
+	print("paf")
+	#$CollisionShape2D.set_deferred("disabled", true)
 	
 func start(pos):
 	position = pos
 	show()
-	$CollisionShape2D.disabled = false
+	#$CollisionShape2D.disabled = false
