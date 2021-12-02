@@ -31,7 +31,7 @@ var lower_room=null
 
 func _ready():
 	randomize()
-	make_rooms()
+
 	
 	#new_game()
 
@@ -50,6 +50,8 @@ func win_game():
 	
 func new_game():
 	score = 0
+	make_rooms()
+	yield(get_tree().create_timer(2),'timeout')
 	create_mob_path()
 	$StartTimer.start()
 	$HUD.update_score(score)
@@ -69,6 +71,7 @@ func new_game():
 
 
 func make_rooms():
+# warning-ignore:unused_variable
 	for i in range(num_rooms) :
 		var pos = Vector2(rand_range(-hspread, hspread),0)
 		var r = Room.instance()
@@ -106,6 +109,7 @@ func _draw():
 		
 			
 
+# warning-ignore:unused_argument
 func _process(delta):
 	update()
 
@@ -190,6 +194,7 @@ func make_map():
 	var corridors = []
 	for room in $Rooms.get_children():
 		var s = (room.size / tile_size).floor()
+# warning-ignore:unused_variable
 		var pos = Map.world_to_map(room.position)
 		var ul = (room.position / tile_size).floor() -s
 		for x in range (2, s.x * 2 - 1):
